@@ -40,6 +40,7 @@ struct wl_callback *frame_callback;
 
 static uint32_t output = UINT32_MAX;
 struct xdg_popup *popup;
+struct xdg_surface *popup_surface;
 struct wl_surface *popup_wl_surface;
 struct wl_egl_window *popup_egl_window;
 static uint32_t popup_width = 256, popup_height = 256;
@@ -53,6 +54,11 @@ static bool run_display = true;
 static int is_child = 0;
 static useconds_t sleep_interval = 5000;
 static bool do_roundtrip = false;
+static bool set_swapinterval = false;
+static bool set_swapinterval_main = false;
+static bool set_swapinterval_popup = false;
+static bool use_frame_callback = true;
+static bool draw_popup_on_click = true;
 
 // whether the pointer is in the popup
 static int pointer_popup = 0;
@@ -164,8 +170,16 @@ static struct wl_callback_listener popup_frame_listener = {
 	.done = popup_surface_frame_callback
 };
 
+
 static void draw(void) {
 	eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+	
+	if(set_swapinterval_main) {
+		if(!eglSwapInterval(egl_display, 0))
+			fprintf(stderr, "Cannot set eglSwapInterval() on main surface!\n");
+		set_swapinterval_main = false;
+	}
+	
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 
@@ -185,7 +199,7 @@ static void draw(void) {
 	glClearColor(is_child ? 0.0f : color_int, 0.0f, is_child ? color_int : 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	if(!frame_callback) {
+	if(!frame_callback && use_frame_callback) {
 		frame_callback = wl_surface_frame(wl_surface);
 		wl_callback_add_listener(frame_callback, &frame_listener, NULL);
 	}
@@ -200,6 +214,13 @@ static void draw_popup(void) {
 	static float alpha_mod = -0.01;
 
 	eglMakeCurrent(egl_display, popup_egl_surface, popup_egl_surface, egl_context);
+		
+	if(set_swapinterval_popup) {
+		if(!eglSwapInterval(egl_display, 0))
+			 fprintf(stderr, "Cannot set eglSwapInterval() on main popup!\n");
+		set_swapinterval_popup = false;
+	}
+	
 	glViewport(0, 0, popup_width, popup_height);
 	glClearColor(popup_red * popup_alpha, 0.5f * popup_alpha,
 		0.5f * popup_alpha, 1.0f);
@@ -209,7 +230,7 @@ static void draw_popup(void) {
 	}
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	if(!popup_frame_callback) {
+	if(!popup_frame_callback && use_frame_callback) {
 		popup_frame_callback = wl_surface_frame(popup_wl_surface);
 		assert(popup_frame_callback);
 		wl_callback_add_listener(popup_frame_callback, &popup_frame_listener, NULL);
@@ -241,10 +262,13 @@ static void popup_destroy(void) {
 	eglDestroySurface(egl_display, popup_egl_surface);
 	wl_egl_window_destroy(popup_egl_window);
 	xdg_popup_destroy(popup);
+	xdg_surface_destroy(popup_surface);
 	wl_surface_destroy(popup_wl_surface);
 	popup_wl_surface = NULL;
 	popup = NULL;
+	popup_surface = NULL;
 	popup_egl_window = NULL;
+	set_swapinterval_popup = set_swapinterval;
 }
 
 static void xdg_popup_done(void *data, struct xdg_popup *xdg_popup) {
@@ -263,8 +287,7 @@ static void create_popup(void) {
 	}
 	struct wl_surface *surface = wl_compositor_create_surface(compositor);
 	assert(xdg_wm_base && surface);
-	struct xdg_surface *popup_surface =
-		xdg_wm_base_get_xdg_surface(xdg_wm_base, surface);
+	popup_surface = xdg_wm_base_get_xdg_surface(xdg_wm_base, surface);
 	struct xdg_positioner *xdg_positioner =
 		xdg_wm_base_create_positioner(xdg_wm_base);
 	assert(popup_surface && xdg_positioner);
@@ -343,7 +366,7 @@ static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
 			else wl_display_flush(display);
 			if(sleep_interval) usleep(sleep_interval);
 			fprintf(stderr, "\n\n\nCommiting the popup\n\n\n");
-			draw_popup();
+			if(draw_popup_on_click) draw_popup();
 		}
 	}
 	else if (!popup_wl_surface) create_popup( /* serial */ );
@@ -459,6 +482,17 @@ int main(int argc, char **argv) {
 			case 'r':
 				do_roundtrip = true;
 				break;
+			case 'f':
+				use_frame_callback = false;
+				break;
+			case 'S':
+				set_swapinterval = true;
+				set_swapinterval_main = true;
+				set_swapinterval_popup = true;
+				break;
+			case 'd':
+				draw_popup_on_click = false;
+				break;
 			default:
 				fprintf(stderr, "Unknown parameter: %s!\n", argv[i]);
 				break;
@@ -501,7 +535,6 @@ int main(int argc, char **argv) {
 		zwlr_foreign_toplevel_manager_v1_add_listener(toplevel_manager, &toplevel_manager_listener, NULL);
 
 	egl_init(display);
-
 	wl_surface = wl_compositor_create_surface(compositor);
 	assert(wl_surface);
 
@@ -531,7 +564,10 @@ int main(int argc, char **argv) {
 	if(!is_child) create_popup();
 
 	while (wl_display_dispatch(display) != -1 && run_display) {
-		// This space intentionally left blank
+		if(!use_frame_callback) {
+			draw();
+			if(popup) draw_popup();
+		}
 	}
 
 	return 0;

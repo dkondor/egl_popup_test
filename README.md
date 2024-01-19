@@ -15,10 +15,13 @@ Running:
 build_rel/egl-popup-test
 ```
 
-Avoid the issue by doing an explicit roundtrip to the compositor before trying to render:
+Command line options:
 ```
-build_rel/egl-popup-test -r
+  -r       do a roundtrip after activating the child view (avoids the problem)
+  -S       set eglSwapInterval() to zero in all surfaces used (avoids the problem)
+  -f       do not use frame callbacks, but render from the main loop
+  -d       do not try to draw the popup immediately after activating the child view
+              (avoids the problem except if -f is also set)
+  -s <us>  sleep for the given amount (in microseconds) after activating the child
+  -C       do not create a child process (cannot demonstrate the problem)
 ```
-
-Additionally, the `-s <delay_us>` parameter can be used to add a delay before rendering.
-
