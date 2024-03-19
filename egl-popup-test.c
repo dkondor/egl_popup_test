@@ -331,7 +331,7 @@ static void xdg_toplevel_handle_configure(UNUSED void *data,
 
 static void xdg_toplevel_handle_close(UNUSED void *data,
 		UNUSED struct xdg_toplevel *xdg_toplevel) {
-	exit(0);
+	run_display = false;
 }
 
 static const struct xdg_toplevel_listener xdg_toplevel_listener = {
@@ -358,6 +358,11 @@ static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
 static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
 	if(!state) return;
+	if(button == BTN_RIGHT)
+	{
+		run_display = false;
+		return;
+	}
 	if(pointer_popup) {
 		if(child_handle) {
 			fprintf(stderr, "\n\n\nSending activate, this should close the popup\n");
@@ -569,6 +574,15 @@ int main(int argc, char **argv) {
 			if(popup) draw_popup();
 		}
 	}
+	
+	printf("Exiting...\n");
+	
+	eglDestroySurface(egl_display, egl_surface);
+	wl_egl_window_destroy(egl_window);
+	xdg_toplevel_destroy(toplevel);
+	xdg_surface_destroy(xdg_surface);
+	
+	printf("Succesfully closed our EGL window\n");
 
 	return 0;
 }
