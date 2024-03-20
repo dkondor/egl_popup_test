@@ -534,10 +534,12 @@ int main(int argc, char **argv) {
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(display);
 
-	assert(compositor && seat && xdg_wm_base && (is_child || toplevel_manager));
+	assert(compositor && seat && xdg_wm_base);
 	
-	if(!is_child)
+	if(create_child && !is_child) {
+		assert(toplevel_manager);
 		zwlr_foreign_toplevel_manager_v1_add_listener(toplevel_manager, &toplevel_manager_listener, NULL);
+	}
 
 	egl_init(display);
 	wl_surface = wl_compositor_create_surface(compositor);
